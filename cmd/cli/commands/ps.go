@@ -2,6 +2,7 @@ package commands
 
 import (
 	"bytes"
+	"fmt"
 	"strings"
 	"time"
 
@@ -34,7 +35,7 @@ func psTable(ps []desktop.BackendStatus) string {
 	var buf bytes.Buffer
 	table := tablewriter.NewWriter(&buf)
 
-	table.SetHeader([]string{"MODEL NAME", "BACKEND", "MODE", "LAST USED"})
+	table.SetHeader([]string{"MODEL NAME", "BACKEND", "MODE", "CONTEXT", "LAST USED"})
 
 	table.SetBorder(false)
 	table.SetColumnSeparator("")
@@ -43,10 +44,11 @@ func psTable(ps []desktop.BackendStatus) string {
 	table.SetNoWhiteSpace(true)
 
 	table.SetColumnAlignment([]int{
-		tablewriter.ALIGN_LEFT, // MODEL
-		tablewriter.ALIGN_LEFT, // BACKEND
-		tablewriter.ALIGN_LEFT, // MODE
-		tablewriter.ALIGN_LEFT, // LAST USED
+		tablewriter.ALIGN_LEFT,  // MODEL
+		tablewriter.ALIGN_LEFT,  // BACKEND
+		tablewriter.ALIGN_LEFT,  // MODE
+		tablewriter.ALIGN_RIGHT, // CONTEXT
+		tablewriter.ALIGN_LEFT,  // LAST USED
 	})
 	table.SetHeaderAlignment(tablewriter.ALIGN_LEFT)
 
@@ -57,6 +59,11 @@ func psTable(ps []desktop.BackendStatus) string {
 		} else {
 			// Strip default "ai/" prefix and ":latest" tag for display
 			modelName = stripDefaultsFromModelName(modelName)
+		}
+
+		contextSize := ""
+		if status.ContextSize > 0 {
+			contextSize = fmt.Sprintf("%d", status.ContextSize)
 		}
 
 		var lastUsed string
@@ -81,6 +88,7 @@ func psTable(ps []desktop.BackendStatus) string {
 			modelName,
 			status.BackendName,
 			status.Mode,
+			contextSize,
 			lastUsed,
 		})
 	}

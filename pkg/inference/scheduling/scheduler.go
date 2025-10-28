@@ -15,6 +15,7 @@ import (
 	"github.com/docker/model-runner/pkg/distribution/distribution"
 	"github.com/docker/model-runner/pkg/distribution/types"
 	"github.com/docker/model-runner/pkg/inference"
+	"github.com/docker/model-runner/pkg/inference/backends/llamacpp"
 	"github.com/docker/model-runner/pkg/inference/backends/vllm"
 	"github.com/docker/model-runner/pkg/inference/memory"
 	"github.com/docker/model-runner/pkg/inference/models"
@@ -128,6 +129,7 @@ func (s *Scheduler) routeHandlers() map[string]http.HandlerFunc {
 	m["POST "+inference.InferencePrefix+"/unload"] = s.Unload
 	m["POST "+inference.InferencePrefix+"/{backend}/_configure"] = s.Configure
 	m["POST "+inference.InferencePrefix+"/_configure"] = s.Configure
+	m["GET "+inference.InferencePrefix+"/runner-configs"] = s.GetRunnerConfigs
 	m["GET "+inference.InferencePrefix+"/requests"] = s.openAIRecorder.GetRecordsHandler()
 	return m
 }
@@ -326,11 +328,54 @@ func (s *Scheduler) getLoaderStatus(ctx context.Context) []BackendStatus {
 				status.LastUsed = s.loader.timestamps[runnerInfo.slot]
 			}
 
+			status.ContextSize = s.effectiveContextSizeForRunnerLocked(key, runnerInfo)
+
 			result = append(result, status)
 		}
 	}
 
 	return result
+}
+
+func (s *Scheduler) getRunnerConfigs(ctx context.Context) []ConfiguredModel {
+	if !s.loader.lock(ctx) {
+		return []ConfiguredModel{}
+	}
+	defer s.loader.unlock()
+	configs := make([]ConfiguredModel, 0, len(s.loader.runnerConfigs))
+	for key, cfg := range s.loader.runnerConfigs {
+		configCopy := make([]string, len(cfg.RuntimeFlags))
+		copy(configCopy, cfg.RuntimeFlags)
+		configs = append(configs, ConfiguredModel{
+			BackendName:  key.backend,
+			ModelID:      key.modelID,
+			Mode:         key.mode.String(),
+			ContextSize:  cfg.ContextSize,
+			RuntimeFlags: configCopy,
+		})
+	}
+	return configs
+}
+
+func (s *Scheduler) effectiveContextSizeForRunnerLocked(key runnerKey, info runnerInfo) int64 {
+	if cfg, ok := s.loader.runnerConfigs[key]; ok && cfg.ContextSize > 0 {
+		return cfg.ContextSize
+	}
+	model, err := s.modelManager.GetModel(info.modelRef)
+	if err != nil {
+		return 0
+	}
+	modelConfig, err := model.Config()
+	if err != nil {
+		return 0
+	}
+	if modelConfig.ContextSize != nil {
+		return int64(*modelConfig.ContextSize)
+	}
+	if key.backend == llamacpp.Name {
+		return int64(llamacpp.GetContextSize(modelConfig, nil))
+	}
+	return 0
 }
 
 func (s *Scheduler) GetDiskUsage(w http.ResponseWriter, _ *http.Request) {
@@ -350,6 +395,17 @@ func (s *Scheduler) GetDiskUsage(w http.ResponseWriter, _ *http.Request) {
 	diskUsage := DiskUsage{modelsDiskUsage, defaultBackendDiskUsage}
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(diskUsage); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to encode response: %v", err), http.StatusInternalServerError)
+		return
+	}
+}
+
+// GetRunnerConfigs returns the configured runtime options for all models.
+func (s *Scheduler) GetRunnerConfigs(w http.ResponseWriter, r *http.Request) {
+	configs := s.getRunnerConfigs(r.Context())
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(configs); err != nil {
 		http.Error(w, fmt.Sprintf("Failed to encode response: %v", err), http.StatusInternalServerError)
 		return
 	}

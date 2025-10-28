@@ -588,6 +588,17 @@ type BackendStatus struct {
 	LastUsed time.Time `json:"last_used,omitempty"`
 	// InUse indicates whether this backend is currently handling a request
 	InUse bool `json:"in_use,omitempty"`
+	// ContextSize is the configured context size for the runner.
+	ContextSize int64 `json:"context_size,omitempty"`
+}
+
+// ConfiguredRunner captures the configured runtime options for a model.
+type ConfiguredRunner struct {
+	BackendName  string   `json:"backend_name"`
+	ModelID      string   `json:"model_id"`
+	Mode         string   `json:"mode"`
+	ContextSize  int64    `json:"context_size,omitempty"`
+	RuntimeFlags []string `json:"runtime_flags,omitempty"`
 }
 
 func (c *Client) PS() ([]BackendStatus, error) {
@@ -609,6 +620,31 @@ func (c *Client) PS() ([]BackendStatus, error) {
 	}
 
 	return ps, nil
+}
+
+func (c *Client) RunnerConfigs() ([]ConfiguredRunner, error) {
+	path := inference.InferencePrefix + "/runner-configs"
+	resp, err := c.doRequest(http.MethodGet, path, nil)
+	if err != nil {
+		return nil, c.handleQueryError(err, path)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		io.Copy(io.Discard, resp.Body)
+		return []ConfiguredRunner{}, nil
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("failed to fetch runner configs: %s: %s", resp.Status, strings.TrimSpace(string(body)))
+	}
+
+	var configs []ConfiguredRunner
+	if err := json.NewDecoder(resp.Body).Decode(&configs); err != nil {
+		return nil, fmt.Errorf("failed to decode runner configs: %w", err)
+	}
+	return configs, nil
 }
 
 // DiskUsage to be imported from docker/model-runner when https://github.com/docker/model-runner/pull/45 is merged.

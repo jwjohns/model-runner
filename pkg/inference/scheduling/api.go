@@ -66,6 +66,8 @@ type BackendStatus struct {
 	LastUsed time.Time `json:"last_used,omitempty"`
 	// InUse indicates whether this backend is currently handling a request
 	InUse bool `json:"in_use,omitempty"`
+	// ContextSize is the configured context size for the runner.
+	ContextSize int64 `json:"context_size,omitempty"`
 }
 
 // DiskUsage represents the disk usage of the models and default backend.
@@ -92,4 +94,13 @@ type ConfigureRequest struct {
 	ContextSize     int64    `json:"context-size,omitempty"`
 	RuntimeFlags    []string `json:"runtime-flags,omitempty"`
 	RawRuntimeFlags string   `json:"raw-runtime-flags,omitempty"`
+}
+
+// ConfiguredModel represents the configured runtime options for a model.
+type ConfiguredModel struct {
+	BackendName  string   `json:"backend_name"`
+	ModelID      string   `json:"model_id"`
+	Mode         string   `json:"mode"`
+	ContextSize  int64    `json:"context_size,omitempty"`
+	RuntimeFlags []string `json:"runtime_flags,omitempty"`
 }

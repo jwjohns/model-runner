@@ -612,3 +612,11 @@ func (l *loader) setRunnerConfig(ctx context.Context, backendName, modelID strin
 	l.runnerConfigs[runnerId] = runnerConfig
 	return nil
 }
+
+func (l *loader) copyRunnerConfigs() map[runnerKey]inference.BackendConfiguration {
+	configs := make(map[runnerKey]inference.BackendConfiguration, len(l.runnerConfigs))
+	for key, value := range l.runnerConfigs {
+		configs[key] = value
+	}
+	return configs
+}
